@@ -13,6 +13,7 @@ import "core:strings"
 Graph :: struct {
 	collections: map[string]string,
 	packages:    map[string]^Package,
+	root:        ^Package,
 }
 
 Package :: struct {
@@ -30,22 +31,37 @@ main :: proc() {
 	graph.collections["core"]   = ODIN_ROOT + "core"
 	graph.collections["vendor"] = ODIN_ROOT + "vendor"
 	graph.collections["shared"] = ODIN_ROOT + "shared"
-
-	base_packages := []string{"runtime", "builtin", "intrinsics"}
 	
-	for pkg_name in base_packages {
+	{
 		pkg := new(Package)
-		pkg.name     = pkg_name
-		pkg.fullpath = filepath.join({ODIN_ROOT + "base", pkg_name})
+		pkg.name     = "base/runtime"
+		pkg.fullpath = filepath.join({ODIN_ROOT + "base", "runtime"})
+		graph.packages[pkg.fullpath] = pkg
+	}
+	{
+		pkg := new(Package)
+		pkg.name     = "base/builtin"
+		pkg.fullpath = filepath.join({ODIN_ROOT + "base", "builtin"})
+		graph.packages[pkg.fullpath] = pkg
+	}
+	{
+		pkg := new(Package)
+		pkg.name     = "base/intrinsics"
+		pkg.fullpath = filepath.join({ODIN_ROOT + "base", "intrinsics"})
 		graph.packages[pkg.fullpath] = pkg
 	}
 
 	root_pkg := new(Package)
 	root_pkg.fullpath = package_path
 
+	graph.root = root_pkg
 	graph.packages[package_path] = root_pkg
 
-	walk_package(root_pkg, &graph, package_path)
+	ast_pkg := parser.parse_package_from_path(package_path) or_else error("Parsing package %q failed", package_path)
+
+	root_pkg.name = ast_pkg.name
+
+	walk_package(root_pkg, &graph, ast_pkg)
 
 	stdout_s := os.stream_from_handle(os.stdout)
 	write_graph(stdout_s, graph)
@@ -68,11 +84,8 @@ write_graph :: proc(s: io.Stream, g: Graph) {
 	}
 }
 
-walk_package :: proc(pkg: ^Package, graph: ^Graph, import_path: string)
+walk_package :: proc(pkg: ^Package, g: ^Graph, ast_pkg: ^ast.Package)
 {
-	ast_pkg := parser.parse_package_from_path(import_path) or_else error("Parsing package %q failed", import_path)
-	pkg.name = ast_pkg.name
-
 	for _, file in ast_pkg.files {
 		for import_node in file.imports {
 			import_path := import_node.fullpath[1:len(import_node.fullpath)-1] // Remove quotes
@@ -88,14 +101,14 @@ walk_package :: proc(pkg: ^Package, graph: ^Graph, import_path: string)
 				collection := import_path[:colon_idx]
 				pkg        := import_path[colon_idx+1:]
 	
-				col_path := graph.collections[collection] or_else error("Unknown collection %q", collection)
+				col_path := g.collections[collection] or_else error("Unknown collection %q", collection)
 				
 				import_path = filepath.join({col_path, pkg})
 			} else {
 				import_path = filepath.join({pkg.fullpath, import_path})
 			}
 
-			import_pkg, has_pkg := graph.packages[import_path]
+			import_pkg, has_pkg := g.packages[import_path]
 
 			if has_pkg {
 				if !slice.contains(pkg.imports[:], import_pkg) {
@@ -106,9 +119,18 @@ walk_package :: proc(pkg: ^Package, graph: ^Graph, import_path: string)
 				import_pkg.fullpath = import_path
 	
 				append(&pkg.imports, import_pkg)
-				graph.packages[import_path] = import_pkg
+				g.packages[import_path] = import_pkg
+
+				import_pkg.name = import_pkg.fullpath
+				if strings.has_prefix(import_pkg.fullpath, ODIN_ROOT) {
+					import_pkg.name = import_pkg.name[len(ODIN_ROOT):]
+				} else if strings.has_prefix(import_pkg.fullpath, g.root.fullpath){
+					import_pkg.name = import_pkg.name[len(g.root.fullpath):]
+				}
+
+				ast_pkg := parser.parse_package_from_path(import_path) or_else error("Parsing package %q failed", import_path)
 				
-				walk_package(import_pkg, graph, import_path)
+				walk_package(import_pkg, g, ast_pkg)
 			}
 		}
 	}
