@@ -42,6 +42,9 @@ main :: proc() {
 
 	root_pkg := new(Package)
 	root_pkg.fullpath = package_path
+
+	graph.packages[package_path] = root_pkg
+
 	walk_package(root_pkg, &graph, package_path)
 
 	stdout_s := os.stream_from_handle(os.stdout)
