@@ -5,5 +5,4 @@ odin build . \
 	-microarch:native \
 	-no-type-assert \
 	-no-bounds-check \
-	-disable-assert \
-	-obfuscate-source-code-locations
+	-disable-assert
