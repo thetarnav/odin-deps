@@ -52,20 +52,19 @@ main :: proc() {
 }
 
 write_graph :: proc(s: io.Stream, g: Graph) {
-	for _, pkg in g.packages {
-		write_package(s, pkg^)
-	}
-}
-
-write_package :: proc(s: io.Stream, pkg: Package) {
 	ws :: io.write_string
 
-	for dep in pkg.imports {
-		ws(s, "\t")
+	for _, pkg in g.packages {
+		if len(pkg.imports) == 0 do continue
+
 		ws(s, pkg.name)
-		ws(s, " -> ")
-		ws(s, dep.name)
 		ws(s, "\n")
+
+		for dep in pkg.imports {
+			ws(s, "\t<- ")
+			ws(s, dep.name)
+			ws(s, "\n")
+		}
 	}
 }
 
